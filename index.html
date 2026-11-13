@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>圖片影片壓縮改名工具</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --text: #1d2129;
+    --muted: #6b7280;
+    --border: #d9dce1;
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+    --danger: #dc2626;
+    --ok: #16a34a;
+    --warn: #b45309;
+    --dropzone-bg: #eef2ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171c;
+      --panel: #1f2229;
+      --text: #e7e9ee;
+      --muted: #9aa1ad;
+      --border: #333844;
+      --accent: #3b82f6;
+      --accent-text: #0b0e14;
+      --danger: #f87171;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --dropzone-bg: #1b2440;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Segoe UI", sans-serif;
+    font-size: 14px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  .version { color: var(--muted); font-size: 12px; }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    padding: 10px 18px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 15px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+  }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+  main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+  .section h2 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: normal;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
+  .naming-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .naming-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .naming-row input {
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    width: 160px;
+  }
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    background: var(--dropzone-bg);
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .dropzone.drag-over { border-color: var(--accent); color: var(--accent); }
+  .dropzone input[type=file] { display: none; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .card {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .card.dragging { opacity: .4; }
+  .drag-handle {
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    background: var(--border);
+    padding: 3px 0;
+    cursor: grab;
+    user-select: none;
+  }
+  .drag-handle:active { cursor: grabbing; }
+  .section.drop-target-active { outline: 2px dashed var(--accent); outline-offset: -2px; }
+  .card .thumb-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .card img.thumb, .card video.thumb {
+    width: 100%; height: 100%; object-fit: cover; cursor: zoom-in;
+  }
+  .card .order-badge {
+    position: absolute; top: 4px; left: 4px;
+    background: rgba(0,0,0,.65); color: #fff;
+    font-size: 11px; padding: 1px 6px; border-radius: 10px;
+  }
+  .card .dur-badge {
+    position: absolute; bottom: 4px; right: 4px;
+    background: rgba(0,0,0,.65); color: #fff;
+    font-size: 11px; padding: 1px 6px; border-radius: 10px;
+  }
+  .card .remove-btn {
+    position: absolute; top: 4px; right: 4px;
+    background: rgba(0,0,0,.55); color: #fff;
+    border: none; border-radius: 50%;
+    width: 20px; height: 20px; line-height: 18px;
+    font-size: 13px; cursor: pointer;
+  }
+  .card .meta {
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .card .meta .name { color: var(--text); display:block; margin-bottom: 2px; }
+  .card .status-line { font-size: 11px; padding: 0 8px 6px; }
+  .status-ok { color: var(--ok); }
+  .status-warn { color: var(--warn); }
+  .status-skip { color: var(--muted); }
+  .actions-row {
+    display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap;
+  }
+  button.primary {
+    background: var(--accent); color: var(--accent-text);
+    border: none; border-radius: 8px; padding: 10px 20px;
+    font-size: 14px; cursor: pointer; font-weight: 600;
+  }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  button.secondary {
+    background: transparent; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 9px 16px; font-size: 14px; cursor: pointer;
+  }
+  button.secondary:disabled { opacity: .4; cursor: not-allowed; border-color: var(--border); color: var(--muted); }
+  .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .progress-text { font-size: 13px; color: var(--muted); white-space: pre-line; }
+  .empty-hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(0,0,0,.85);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .lightbox.show { display: flex; }
+  .lightbox img, .lightbox video { max-width: 92vw; max-height: 92vh; }
+  .lightbox .close-hint {
+    position: absolute; top: 16px; right: 20px; color: #fff; font-size: 14px; cursor: pointer;
+  }
+  .sub-section-title {
+    font-size: 13px; color: var(--muted); margin: 18px 0 6px; font-weight: 600;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>圖片影片壓縮改名工具</h1>
+  <span class="version">v1.1.1</span>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="image">📷 圖片</button>
+  <button class="tab-btn" data-tab="video">🎬 影片</button>
+</div>
+
+<main>
+
+  <!-- 圖片分頁 -->
+  <div class="tab-panel active" id="panel-image">
+    <div class="section">
+      <h2>圖片批次處理 <span class="badge">目標：單張 500KB 以下</span> <span class="badge">長邊一律等比例調整為 3000px（含放大）</span></h2>
+      <div class="naming-row">
+        <label>前缀文字
+          <input type="text" id="image-prefix" placeholder="例如：進料單">
+        </label>
+        <label>起始編號
+          <input type="number" id="image-start" value="1" min="0">
+        </label>
+      </div>
+      <div class="toggle-row">
+        <input type="checkbox" id="image-png2jpg">
+        <label for="image-png2jpg">PNG 也轉存成 JPG（去除透明背景，壓縮效果更好）</label>
+      </div>
+      <div class="dropzone" id="image-dropzone">
+        拖放圖片到這裡，或點擊選擇檔案（可多選）
+        <input type="file" id="image-input" accept="image/*" multiple>
+      </div>
+      <div class="grid" id="image-grid"></div>
+      <div class="empty-hint" id="image-empty-hint">尚未加入任何圖片。</div>
+      <div class="actions-row">
+        <button class="primary" id="image-process-btn" disabled>開始壓縮圖片</button>
+        <button class="secondary" id="image-download-btn" hidden>下載 ZIP</button>
+        <span class="progress-text" id="image-progress"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 影片分頁 -->
+  <div class="tab-panel" id="panel-video">
+    <div class="section" id="file-protocol-warning" style="background:var(--dropzone-bg);" hidden>
+      ⚠️ 影片壓縮需要用桌面的「啟動（Mac）.command」或「啟動（Windows）.bat」開啟本工具，不能直接雙擊這個 HTML 檔，否則影片壓縮會失敗（圖片分頁不受影響，直接雙擊就能用）。
+    </div>
+    <div class="section" data-category="loop">
+      <h2>🔁 循環影片 <span class="badge">目標：3MB 以下</span></h2>
+      <div class="naming-row">
+        <label>前缀文字 <input type="text" class="v-prefix" placeholder="例如：A案"></label>
+        <label>起始編號 <input type="number" class="v-start" value="1" min="0"></label>
+      </div>
+      <div class="dropzone v-dropzone">
+        拖放影片到這裡，或點擊選擇檔案（可多選）
+        <input type="file" class="v-input" accept="video/*,.mp4,.m4v,.mov" multiple>
+      </div>
+      <div class="grid v-grid"></div>
+      <div class="empty-hint v-empty-hint">尚未加入任何影片。</div>
+    </div>
+
+    <div class="section" data-category="project">
+      <h2>📁 專案影片 <span class="badge">目標：30MB 以下</span></h2>
+      <div class="naming-row">
+        <label>前缀文字 <input type="text" class="v-prefix" placeholder="例如：A案"></label>
+        <label>起始編號 <input type="number" class="v-start" value="1" min="0"></label>
+      </div>
+      <div class="dropzone v-dropzone">
+        拖放影片到這裡，或點擊選擇檔案（可多選）
+        <input type="file" class="v-input" accept="video/*,.mp4,.m4v,.mov" multiple>
+      </div>
+      <div class="grid v-grid"></div>
+      <div class="empty-hint v-empty-hint">尚未加入任何影片。</div>
+    </div>
+
+    <div class="section" data-category="intro">
+      <h2>🎬 首屏影片 <span class="badge">目標：30MB 以下</span></h2>
+      <div class="naming-row">
+        <label>前缀文字 <input type="text" class="v-prefix" placeholder="例如：A案"></label>
+        <label>起始編號 <input type="number" class="v-start" value="1" min="0"></label>
+      </div>
+      <div class="dropzone v-dropzone">
+        拖放影片到這裡，或點擊選擇檔案（可多選）
+        <input type="file" class="v-input" accept="video/*,.mp4,.m4v,.mov" multiple>
+      </div>
+      <div class="grid v-grid"></div>
+      <div class="empty-hint v-empty-hint">尚未加入任何影片。</div>
+    </div>
+
+    <div class="section">
+      <div class="actions-row">
+        <button class="primary" id="video-process-btn" disabled>開始壓縮影片（可能需要數十秒到數分鐘）</button>
+        <button class="secondary" id="video-download-btn" hidden>下載 ZIP（全部類別）</button>
+      </div>
+      <div class="progress-text" id="video-progress"></div>
+    </div>
+  </div>
+
+</main>
+
+<div class="lightbox" id="lightbox">
+  <span class="close-hint">點擊任意處關閉 ✕</span>
+  <div id="lightbox-content"></div>
+</div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/ffmpeg.iife.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
