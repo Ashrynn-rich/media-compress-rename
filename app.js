@@ -69,23 +69,39 @@
     }
   });
 
+  // ---------- 處理中鎖定 ----------
+  // 處理迴圈是邊 await 邊讀清單，途中清單被改動會跳過或重複處理，所以處理期間禁止任何改動。
+  const isLocked = (el) => !!el.closest(".panel-locked");
+  function setPanelLocked(panelEl, locked) {
+    panelEl.classList.toggle("panel-locked", locked);
+    panelEl.querySelector(".lock-notice").hidden = !locked;
+  }
+  // 檔案若拖到放置框以外，瀏覽器預設會直接開啟該檔案、離開本頁，處理到一半的結果就沒了
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  // 拖曳反白文字時事件目標是文字節點，沒有 closest()，要換成它所在的元素
+  const elOf = (e) => (e.target instanceof Element ? e.target : e.target.parentElement);
+
   // ---------- 拖放上傳共用 ----------
   function wireDropzone(dropzoneEl, inputEl, onFiles) {
     dropzoneEl.addEventListener("click", (e) => {
+      if (isLocked(dropzoneEl)) return;
       if (e.target !== inputEl) inputEl.click();
     });
     inputEl.addEventListener("change", () => {
-      onFiles(Array.from(inputEl.files));
+      if (!isLocked(dropzoneEl)) onFiles(Array.from(inputEl.files));
       inputEl.value = "";
     });
     dropzoneEl.addEventListener("dragover", (e) => {
       e.preventDefault();
-      dropzoneEl.classList.add("drag-over");
+      if (!isLocked(dropzoneEl)) dropzoneEl.classList.add("drag-over");
     });
     dropzoneEl.addEventListener("dragleave", () => dropzoneEl.classList.remove("drag-over"));
     dropzoneEl.addEventListener("drop", (e) => {
       e.preventDefault();
       dropzoneEl.classList.remove("drag-over");
+      if (isLocked(dropzoneEl)) return;
       onFiles(Array.from(e.dataTransfer.files));
     });
   }
@@ -97,8 +113,8 @@
 
   function enableSectionDrop(sectionEl, arrayRef, onDrop) {
     sectionEl.addEventListener("dragstart", (e) => {
-      const handle = e.target.closest(".drag-handle");
-      if (!handle) {
+      const handle = elOf(e).closest(".drag-handle");
+      if (!handle || isLocked(sectionEl)) {
         e.preventDefault();
         return;
       }
@@ -111,7 +127,7 @@
       card.classList.add("dragging");
     });
     sectionEl.addEventListener("dragend", (e) => {
-      const card = e.target.closest(".card");
+      const card = elOf(e).closest(".card");
       if (card) card.classList.remove("dragging");
       document.querySelectorAll(".section.drop-target-active").forEach((el) => el.classList.remove("drop-target-active"));
       dragState.array = null;
@@ -130,7 +146,7 @@
       if (dragState.array == null) return;
       e.preventDefault();
       sectionEl.classList.remove("drop-target-active");
-      const card = e.target.closest(".card");
+      const card = elOf(e).closest(".card");
       let destIdx = arrayRef.length;
       if (card && sectionEl.contains(card)) destIdx = Number(card.dataset.idx);
       const srcArray = dragState.array;
@@ -189,6 +205,7 @@
       card.querySelector(".thumb").addEventListener("click", () => openLightboxImage(item.url));
       card.querySelector(".remove-btn").addEventListener("click", (e) => {
         e.stopPropagation();
+        if (isLocked(card)) return;
         URL.revokeObjectURL(item.url);
         imageItems.splice(idx, 1);
         imageProcessed = false;
@@ -306,20 +323,37 @@
     }
   }
 
+  const imagePanel = document.getElementById("panel-image");
+
   imageProcessBtn.addEventListener("click", async () => {
-    imageProcessBtn.disabled = true;
-    const pngToJpg = imagePng2JpgToggle.checked;
-    for (let i = 0; i < imageItems.length; i++) {
-      imageProgress.textContent = `處理中 ${i + 1}/${imageItems.length} ...`;
-      await processImageItem(imageItems[i], pngToJpg);
-      renderImageGrid();
-    }
-    imageProgress.textContent = `完成，共處理 ${imageItems.length} 張圖片。`;
-    imageProcessed = true;
+    imageProcessed = false;
     updateImageActionState();
+    imageProcessBtn.disabled = true;
+    imagePng2JpgToggle.disabled = true;
+    setPanelLocked(imagePanel, true);
+    try {
+      const pngToJpg = imagePng2JpgToggle.checked;
+      for (let i = 0; i < imageItems.length; i++) {
+        imageProgress.textContent = `處理中 ${i + 1}/${imageItems.length} ...`;
+        await processImageItem(imageItems[i], pngToJpg);
+        renderImageGrid();
+      }
+      imageProgress.textContent = `完成，共處理 ${imageItems.length} 張圖片。`;
+      imageProcessed = true;
+    } catch (e) {
+      imageProgress.textContent = "處理中斷：" + e.message + "，請再按一次「開始壓縮圖片」。";
+    } finally {
+      setPanelLocked(imagePanel, false);
+      imagePng2JpgToggle.disabled = false;
+      updateImageActionState();
+    }
   });
 
   imageDownloadBtn.addEventListener("click", async () => {
+    if (imageItems.some((it) => !it.outBlob)) {
+      imageProgress.textContent = "⚠️ 有圖片還沒處理，請先按「開始壓縮圖片」。";
+      return;
+    }
     const prefix = imagePrefixInput.value || "";
     const start = parseInt(imageStartInput.value, 10) || 0;
     const digits = Math.max(3, String(start + imageItems.length - 1).length);
@@ -401,6 +435,7 @@
       `;
       card.querySelector(".remove-btn").addEventListener("click", (e) => {
         e.stopPropagation();
+        if (isLocked(card)) return;
         URL.revokeObjectURL(item.url);
         items.splice(idx, 1);
         videoProcessed = false;
@@ -540,30 +575,49 @@
     }
   }
 
+  const videoPanel = document.getElementById("panel-video");
+
   videoProcessBtn.addEventListener("click", async () => {
     if (location.protocol === "file:") {
       videoProgress.textContent =
         "⚠️ 影片壓縮需要透過「啟動」腳本開啟本工具才能運作，無法直接雙擊 HTML 檔使用，請改用「啟動（Mac）.command」或「啟動（Windows）.bat」。";
       return;
     }
-    videoProcessBtn.disabled = true;
-    const order = ["loop", "project", "intro"];
-    const total = totalVideoCount();
-    let done = 0;
-    for (const cat of order) {
-      for (const item of videoCategories[cat]) {
-        done++;
-        videoProgress.textContent = `處理中 ${done}/${total}：${item.name}`;
-        await compressVideoItem(item, VIDEO_TARGETS[cat]);
-        renderVideoGrid(cat);
-      }
-    }
-    videoProgress.textContent = `完成，共處理 ${total} 支影片。`;
-    videoProcessed = true;
+    videoProcessed = false;
     updateVideoActionState();
+    videoProcessBtn.disabled = true;
+    setPanelLocked(videoPanel, true);
+    try {
+      const order = ["loop", "project", "intro"];
+      const total = totalVideoCount();
+      let done = 0;
+      for (const cat of order) {
+        for (const item of videoCategories[cat]) {
+          done++;
+          videoProgress.textContent = `處理中 ${done}/${total}：${item.name}`;
+          await compressVideoItem(item, VIDEO_TARGETS[cat]);
+          item.processedFor = cat;
+          renderVideoGrid(cat);
+        }
+      }
+      videoProgress.textContent = `完成，共處理 ${total} 支影片。`;
+      videoProcessed = true;
+    } catch (e) {
+      videoProgress.textContent = "處理中斷：" + e.message + "，請再按一次「開始壓縮影片」。";
+    } finally {
+      setPanelLocked(videoPanel, false);
+      updateVideoActionState();
+    }
   });
 
   videoDownloadBtn.addEventListener("click", async () => {
+    const notReady = ["loop", "project", "intro"].some((cat) =>
+      videoCategories[cat].some((it) => !it.outBlob || it.processedFor !== cat)
+    );
+    if (notReady) {
+      videoProgress.textContent = "⚠️ 有影片還沒處理（或換過分組），請先按「開始壓縮影片」。";
+      return;
+    }
     const zip = new JSZip();
     ["loop", "project", "intro"].forEach((cat) => {
       const ui = videoCategoryUI[cat];
